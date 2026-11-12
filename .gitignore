@@ -1,0 +1,11 @@
+node_modules
+out
+dist
+*.log
+.DS_Store
+# Playwright 本地 profile（登录态）不入库
+profiles
+userData
+# 测试产物
+test-results
+playwright-report

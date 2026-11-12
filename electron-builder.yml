@@ -1,0 +1,16 @@
+appId: com.shizhihui.pickflow
+productName: Pickflow
+directories:
+  output: dist
+  buildResources: resources
+files:
+  - out/**/*
+  - package.json
+asarUnpack:
+  - '**/better-sqlite3/**'
+mac:
+  category: public.app-category.productivity
+  target:
+    - arm64
+  hardenedRuntime: false
+npmRebuild: true
