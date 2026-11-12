@@ -7,6 +7,7 @@ import { applyCleanings, buildDedupeKey } from './cleaning.js'
 import { extractDetailFields, extractListRows } from './extract.js'
 import { detectLoginExpired, isLoginStatusCode } from './loginDetect.js'
 import { resolveFirstAvailable, resolveOnPage, resolveSpec } from '../browser/locatorResolve.js'
+import { AttachmentDownloader, resolveAttachmentUrls } from '../browser/attachmentDownloader.js'
 
 // 采集执行器：一个实例对应一次 run。
 // 只依赖 RuleSnapshot 不可变快照，规则后续被修改不影响本次运行。
@@ -35,8 +36,11 @@ export class Runner {
   private stopFlag = false
   private loginWaiter: { resolve: () => void } | null = null
   private stats: RunStats = { ...EMPTY_STATS }
+  private downloader: AttachmentDownloader
 
-  constructor(private opts: RunnerOptions) {}
+  constructor(private opts: RunnerOptions) {
+    this.downloader = new AttachmentDownloader(opts.context, opts.taskId)
+  }
 
   requestStop(): void {
     this.stopFlag = true
@@ -207,7 +211,7 @@ export class Runner {
         if (runRepo.isItemDone(this.opts.runId, itemKey)) continue
 
         try {
-          await this.processRow(row)
+          await this.processRow(page, row)
           runRepo.markItem(this.opts.runId, itemKey, 'list_page', 'done')
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
@@ -249,12 +253,15 @@ export class Runner {
     }
   }
 
-  private async processRow(row: {
-    index: number
-    data: Record<string, string | null>
-    detailHref: string | null
-    sourceUrl: string
-  }): Promise<void> {
+  private async processRow(
+    listPage: Page,
+    row: {
+      index: number
+      data: Record<string, string | null>
+      detailHref: string | null
+      sourceUrl: string
+    }
+  ): Promise<void> {
     const { snapshot } = this.opts
     let data: Record<string, unknown> = { ...row.data }
     let sourceUrl = row.sourceUrl
@@ -266,26 +273,32 @@ export class Runner {
       }
     }
 
-    // 详情页
-    if (snapshot.detail && row.detailHref) {
-      const detailData = await this.withRetry('detail', async () => {
+    // 详情页。有详情内定位器类附件时，tab 延迟到附件处理完再关；否则抽完即关。
+    let detailTab: Page | null = null
+    const detailHref = row.detailHref
+    if (snapshot.detail && detailHref) {
+      const needDetailTab = snapshot.attachments.some((a) => !!a.locator)
+      detailTab = await this.withRetry<Page | null>('detail', async () => {
         const tab = await this.opts.context.newPage()
         try {
-          await this.gotoWithLoginCheck(tab, row.detailHref!)
-          return await extractDetailFields(tab, snapshot.detail!.fields)
-        } finally {
+          await this.gotoWithLoginCheck(tab, detailHref)
+          const detailData = await extractDetailFields(tab, snapshot.detail!.fields)
+          data = { ...data, ...detailData }
+          sourceUrl = detailHref
+          if (!needDetailTab) await tab.close().catch(() => undefined)
+          return needDetailTab ? tab : null
+        } catch (err) {
           await tab.close().catch(() => undefined)
+          throw err
         }
       })
-      data = { ...data, ...detailData }
-      sourceUrl = row.detailHref
     }
 
     // 清洗管线
     const cleaned = applyCleanings(data, snapshot.cleaning)
     const dedupeKey = buildDedupeKey(cleaned, snapshot.dedupeKey)
 
-    const { inserted } = resultRepo.upsert(
+    const { id: resultId, inserted } = resultRepo.upsert(
       {
         taskId: this.opts.taskId,
         runId: this.opts.runId,
@@ -300,6 +313,33 @@ export class Runner {
 
     this.stats.rowsExtracted++
     if (inserted) this.stats.rowsUpserted++
+
+    // 附件下载：URL 字段在列表页解析，详情内定位器在详情 tab 解析
+    if (snapshot.attachments.length > 0) {
+      try {
+        for (const spec of snapshot.attachments) {
+          const scopePage = spec.locator && detailTab ? detailTab : listPage
+          const urls = await this.withRetry('attachment-resolve', () =>
+            resolveAttachmentUrls(scopePage, spec, cleaned)
+          )
+          for (const url of urls) {
+            if (this.stopFlag) break
+            const outcome = await this.downloader.downloadOne({ resultId, spec, url, rowIndex: row.index })
+            if (outcome.ok) {
+              this.stats.attachmentsDone++
+              this.log('info', 'attachment', `附件已下载: ${outcome.filename} (${outcome.bytes} B)`)
+            } else {
+              this.stats.attachmentsFailed++
+              this.log('warn', 'attachment', `附件下载失败 ${url}: ${outcome.error}`)
+            }
+          }
+        }
+      } finally {
+        if (detailTab) await detailTab.close().catch(() => undefined)
+      }
+    } else if (detailTab) {
+      await detailTab.close().catch(() => undefined)
+    }
   }
 
   private async clickNext(page: Page): Promise<boolean> {

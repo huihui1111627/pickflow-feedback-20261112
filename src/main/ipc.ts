@@ -76,7 +76,8 @@ export function registerIpc(): void {
       row: draft?.row,
       fields: draft?.fields ?? [],
       detailLink: draft?.detailLink,
-      paginationNext: draft?.paginationNext
+      paginationNext: draft?.paginationNext,
+      attachment: draft?.attachment
     }
   })
 
@@ -108,7 +109,9 @@ export function registerIpc(): void {
 
   // ---- 数据与导出 ----
   ipcMain.handle('data:query', (_e, args: DataQuery) => resultRepo.query(args))
-  ipcMain.handle('export:start', (_e, args: { taskId: string; format: 'csv' | 'json' }) => exportTask(args.taskId, args.format))
+  ipcMain.handle('export:start', (_e, args: { taskId: string; format: 'csv' | 'json'; includeAttachments: boolean }) =>
+    exportTask(args.taskId, args.format, args.includeAttachments ?? false)
+  )
 
   // ---- 设置与对话框 ----
   ipcMain.handle('settings:get', () => getSettings())

@@ -54,7 +54,8 @@ const api = {
     query: (args: IpcContract['data:query']['args']) => invoke('data:query', args)
   },
   exporter: {
-    start: (taskId: string, format: 'csv' | 'json') => invoke('export:start', { taskId, format, includeAttachments: false })
+    start: (taskId: string, format: 'csv' | 'json', includeAttachments = false) =>
+      invoke('export:start', { taskId, format, includeAttachments })
   },
   settings: {
     get: () => invoke('settings:get', undefined as void),

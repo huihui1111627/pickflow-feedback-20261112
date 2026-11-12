@@ -172,4 +172,5 @@ export type PickerMode =
   | 'field'
   | 'detail-link'
   | 'pagination'
+  | 'attachment'
   | 'frame-scope'

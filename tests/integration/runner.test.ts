@@ -10,6 +10,10 @@ import { runRepo } from '../../src/main/db/repositories/run.repo.js'
 import { resultRepo } from '../../src/main/db/repositories/result.repo.js'
 import { Runner } from '../../src/main/engine/runner.js'
 import { ruleRepo } from '../../src/main/db/repositories/rule.repo.js'
+import { attachmentRepo } from '../../src/main/db/repositories/attachment.repo.js'
+import { exportTask } from '../../src/main/services/export.js'
+import { existsSync, readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import type { RuleSnapshot } from '../../src/shared/rule.types.js'
 import type { RunEvent } from '../../src/shared/run.types.js'
 
@@ -22,11 +26,15 @@ const fixtureRoot = join(import.meta.dirname, '..', 'fixtures')
 function startFixtureServer(): Promise<{ server: Server; baseUrl: string }> {
   const server = createServer((req, res) => {
     const url = req.url ?? '/'
-    // /detail/A001 统一返回详情夹具
-    const file = url.startsWith('/detail/') ? 'detail.html' : url === '/' ? 'list.html' : url.slice(1)
+    // /detail/A001 返回详情夹具；/files/* 映射到夹具根目录的同名文件
+    let file: string
+    if (url.startsWith('/detail/')) file = 'detail.html'
+    else if (url.startsWith('/files/')) file = url.slice('/files/'.length)
+    else file = url === '/' ? 'list.html' : url.slice(1)
     try {
       const body = readFileSync(join(fixtureRoot, file))
-      res.setHeader('content-type', 'text/html; charset=utf-8')
+      const mime = file.endsWith('.pdf') ? 'application/pdf' : 'text/html; charset=utf-8'
+      res.setHeader('content-type', mime)
       res.end(body)
     } catch {
       res.statusCode = 404
@@ -58,6 +66,7 @@ function buildSnapshot(): RuleSnapshot {
       { id: 'title', name: '标题', kind: 'text', locator: css('.title'), scope: 'list', required: true, dataType: 'string' },
       { id: 'amount', name: '金额', kind: 'text', locator: css('.amount'), scope: 'list', dataType: 'string' },
       { id: 'flag', name: '是否有效', kind: 'text', locator: css('.flag'), scope: 'list', dataType: 'boolean' },
+      { id: 'fileUrl', name: '附件直链', kind: 'attr', attr: 'href', locator: css('.list-file'), scope: 'list', dataType: 'string' },
       { id: 'detailCode', name: '详情编号', kind: 'text', locator: css('#detail-code'), scope: 'detail', dataType: 'string' }
     ],
     detail: {
@@ -73,7 +82,15 @@ function buildSnapshot(): RuleSnapshot {
       { fieldId: 'amount', ops: [{ op: 'toType', target: 'number' }] },
       { fieldId: 'flag', ops: [{ op: 'toType', target: 'boolean' }] }
     ],
-    attachments: [],
+    attachments: [
+      {
+        id: 'specDoc',
+        locator: css('.doc-link'),
+        attr: 'href',
+        allowedExtensions: ['pdf'],
+        naming: '{rowIndex}-{filename}'
+      }
+    ],
     dedupeKey: ['title'],
     retry: { maxAttempts: 2, backoffBaseMs: 50, backoffMaxMs: 200 },
     throttle: { minIntervalMs: 0, jitterMs: 0 }
@@ -147,6 +164,23 @@ describe('Runner 端到端', () => {
     // 第三行英文布尔
     const third = page.rows.find((r) => String(r.data.title).includes('安防'))!
     expect(third.data.flag).toBe(true)
+
+    // 附件：每行详情页一个 pdf，共 3 个，落盘且内容可寻址
+    const attachments = attachmentRepo.listByTask(taskId)
+    expect(attachments).toHaveLength(3)
+    for (const att of attachments) {
+      expect(att.status).toBe('done')
+      expect(att.mime).toBe('application/pdf')
+      expect(att.local_path).toBeTruthy()
+      expect(existsSync(att.local_path!)).toBe(true)
+      // 同一内容 hash 相同，三个文件指向同一份内容寻址文件
+      const disk = readFileSync(att.local_path!)
+      expect(disk.toString()).toContain('PDF-BINARY-CONTENT')
+      expect(att.hash_sha256).toBeTruthy()
+    }
+    // 内容寻址：相同内容只存一份物理文件
+    const uniquePaths = new Set(attachments.map((a) => a.local_path))
+    expect(uniquePaths.size).toBe(1)
   })
 
   it('同 task 重跑不重复入库（跨 run 幂等）', async () => {
@@ -173,6 +207,8 @@ describe('Runner 端到端', () => {
     expect(page.total).toBe(3)
     // 两次 run 都存在，但结果只有 3 行
     expect(runRepo.listRuns(taskId)).toHaveLength(2)
+    // 附件登记同样不重复
+    expect(attachmentRepo.listByTask(taskId)).toHaveLength(3)
   })
 
   it('停止后带检查点续跑，最终数据完整且不重复', async () => {
@@ -217,5 +253,69 @@ describe('Runner 端到端', () => {
     expect(page.rows.map((r) => r.data.title).sort()).toEqual(
       ['机房扩容采购公告', '安防系统维保', '网络设备升级 & 运维'].sort()
     )
+  })
+
+  it('导出带附件的 zip：数据文件 + files/ + manifest 齐全', async () => {
+    const snapshot = buildSnapshot()
+    const { ruleId, versionId } = ruleRepo.create('导出规则', 'it', snapshot, 'v1')
+    const taskId = runRepo.ensureTask(ruleId, versionId, null, { minIntervalMs: 0, jitterMs: 0, maxAttempts: 2 })
+    const runId = runRepo.createRun(taskId, versionId, 'manual', null)
+    const runner = new Runner({
+      runId, taskId, ruleVersionId: versionId, snapshot, context,
+      resumeCursor: null, emit: () => undefined
+    })
+    await runner.run()
+
+    // 不带附件：仍是单文件
+    const plain = await exportTask(taskId, 'json', false)
+    expect(plain.path.endsWith('.json')).toBe(true)
+    expect(existsSync(plain.path)).toBe(true)
+
+    // 带附件：zip
+    const zip = await exportTask(taskId, 'csv', true)
+    expect(zip.path.endsWith('.zip')).toBe(true)
+    expect(existsSync(zip.path)).toBe(true)
+
+    const listing = execFileSync('unzip', ['-l', zip.path], { encoding: 'utf8' })
+    expect(listing).toContain('data.csv')
+    expect(listing).toContain('manifest.json')
+    expect(listing).toMatch(/files\/[a-f0-9]+\.pdf/)
+    // 内容寻址去重：3 条结果引用同一文件，包里只有 1 个 pdf
+    const pdfEntries = listing.match(/files\/[a-f0-9]+\.pdf/g) ?? []
+    expect(new Set(pdfEntries).size).toBe(1)
+
+    const manifestRaw = execFileSync('unzip', ['-p', zip.path, 'manifest.json'], { encoding: 'utf8' })
+    const manifest = JSON.parse(manifestRaw) as { resultId: string; attachments: { packagePath: string; url: string }[] }[]
+    expect(manifest).toHaveLength(3)
+    for (const entry of manifest) {
+      expect(entry.attachments).toHaveLength(1)
+      expect(entry.attachments[0].packagePath).toMatch(/^files\//)
+      expect(entry.attachments[0].url).toContain('/files/spec.pdf')
+      // 解压出来的附件内容与源文件一致
+      const extracted = execFileSync('unzip', ['-p', zip.path, entry.attachments[0].packagePath])
+      expect(extracted.toString()).toContain('PDF-BINARY-CONTENT')
+    }
+  })
+
+  it('附件来源支持 URL 字段模式', async () => {
+    const snapshot = buildSnapshot()
+    // 把附件规则从元素定位切成 URL 字段
+    snapshot.attachments = [
+      { id: 'fromField', sourceFieldId: 'fileUrl', attr: 'href', naming: '{filename}' }
+    ]
+    const { ruleId, versionId } = ruleRepo.create('字段附件规则', 'it', snapshot, 'v1')
+    const taskId = runRepo.ensureTask(ruleId, versionId, null, { minIntervalMs: 0, jitterMs: 0, maxAttempts: 2 })
+    const runId = runRepo.createRun(taskId, versionId, 'manual', null)
+    const runner = new Runner({
+      runId, taskId, ruleVersionId: versionId, snapshot, context,
+      resumeCursor: null, emit: () => undefined
+    })
+    await runner.run()
+    expect(runRepo.getRun(runId).status).toBe('done')
+
+    const attachments = attachmentRepo.listByTask(taskId)
+    expect(attachments).toHaveLength(3)
+    expect(attachments.every((a) => a.status === 'done' && a.field_id === 'fromField')).toBe(true)
+    expect(attachments.every((a) => a.url.endsWith('/files/spec.pdf'))).toBe(true)
   })
 })

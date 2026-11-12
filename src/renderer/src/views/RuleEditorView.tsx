@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type {
+  AttachmentSpec,
   CleaningOp,
   FieldCleaning,
   FieldSpec,
@@ -29,6 +30,7 @@ export default function RuleEditorView({ ruleId, onSaved }: Props) {
   const [detailLink, setDetailLink] = useState<LocatorSpec | undefined>()
   const [pagination, setPagination] = useState<PaginationSpec>(DEFAULT_PAGINATION)
   const [cleaning, setCleaning] = useState<FieldCleaning[]>([])
+  const [attachments, setAttachments] = useState<AttachmentSpec[]>([])
   const [dedupeKey, setDedupeKey] = useState<string[]>([])
   const [retry, setRetry] = useState({ maxAttempts: 3, backoffBaseMs: 1000, backoffMaxMs: 10000 })
   const [throttle, setThrottle] = useState({ minIntervalMs: 800, jitterMs: 400 })
@@ -38,6 +40,7 @@ export default function RuleEditorView({ ruleId, onSaved }: Props) {
   const [pickerOn, setPickerOn] = useState(false)
   const [mode, setMode] = useState<PickerMode>('off')
   const [activeFieldId, setActiveFieldId] = useState<string | undefined>()
+  const activeAttachmentId = useRef<string | undefined>()
   const [previewRows, setPreviewRows] = useState<PreviewRow[]>([])
   const [message, setMessage] = useState('')
 
@@ -65,6 +68,7 @@ export default function RuleEditorView({ ruleId, onSaved }: Props) {
       setDetailLink(s.detail?.linkLocator)
       setPagination(s.pagination)
       setCleaning(s.cleaning)
+      setAttachments(s.attachments ?? [])
       setDedupeKey(s.dedupeKey)
       setRetry(s.retry)
       setThrottle(s.throttle)
@@ -90,6 +94,9 @@ export default function RuleEditorView({ ruleId, onSaved }: Props) {
         setDetailLink(spec)
       } else if (m === 'pagination') {
         setPagination((prev) => ({ ...prev, mode: 'click', click: { next: spec } }))
+      } else if (m === 'attachment') {
+        const aid = activeAttachmentId.current
+        if (aid) setAttachments((prev) => prev.map((a) => (a.id === aid ? { ...a, locator: spec } : a)))
       }
       setMessage(`已捕获元素（${payload.unique ? '唯一定位' : '定位不唯一，建议重选'}）`)
     })
@@ -120,7 +127,7 @@ export default function RuleEditorView({ ruleId, onSaved }: Props) {
           : undefined,
       pagination,
       cleaning,
-      attachments: [],
+      attachments,
       dedupeKey,
       retry,
       throttle,
@@ -176,6 +183,27 @@ export default function RuleEditorView({ ruleId, onSaved }: Props) {
 
   const updateField = (id: string, patch: Partial<FieldSpec>) => {
     setFields((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch } : f)))
+  }
+
+  const addAttachment = () => {
+    const id = `att_${attachments.length + 1}_${Math.floor(Math.random() * 1000)}`
+    const spec: AttachmentSpec = {
+      id,
+      // 默认走元素定位；切到字段模式时由 UI 清掉 locator、填 sourceFieldId
+      locator: { candidates: [{ engine: 'css', value: 'body' }] },
+      attr: 'href',
+      naming: '{rowIndex}-{filename}'
+    }
+    setAttachments((prev) => [...prev, spec])
+  }
+
+  const updateAttachment = (id: string, patch: Partial<AttachmentSpec>) => {
+    setAttachments((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch } : a)))
+  }
+
+  const pickAttachment = async (id: string) => {
+    activeAttachmentId.current = id
+    await enterMode('attachment')
   }
 
   const locatorSummary = (spec?: LocatorSpec): string =>
@@ -330,6 +358,97 @@ export default function RuleEditorView({ ruleId, onSaved }: Props) {
           <span className="mono muted">{locatorSummary(detailLink)}</span>
         </div>
         {detailEnabled && <p className="muted">详情字段：在浏览器里手动打开一个详情页，然后「+ 详情页字段」逐个点选。</p>}
+      </div>
+
+      <div className="card">
+        <h3>附件下载</h3>
+        <div className="row">
+          <button onClick={addAttachment}>+ 加附件规则</button>
+          <span className="muted">元素定位适合下载按钮；URL 字段适合已抽出来的直链</span>
+        </div>
+        {attachments.length > 0 && (
+          <table className="grid">
+            <thead>
+              <tr>
+                <th>来源方式</th>
+                <th>取值</th>
+                <th>属性</th>
+                <th>允许扩展名</th>
+                <th>命名模板</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {attachments.map((a) => {
+                const useField = !!a.sourceFieldId
+                return (
+                  <tr key={a.id}>
+                    <td>
+                      <select
+                        value={useField ? 'field' : 'locator'}
+                        onChange={(e) =>
+                          updateAttachment(a.id, e.target.value === 'field'
+                            ? { sourceFieldId: fields[0]?.id ?? '', locator: undefined }
+                            : { sourceFieldId: undefined, locator: { candidates: [{ engine: 'css', value: 'body' }] } })
+                        }
+                      >
+                        <option value="locator">元素定位</option>
+                        <option value="field">URL 字段</option>
+                      </select>
+                    </td>
+                    <td>
+                      {useField ? (
+                        <select
+                          value={a.sourceFieldId}
+                          onChange={(e) => updateAttachment(a.id, { sourceFieldId: e.target.value })}
+                        >
+                          {fields.map((f) => (
+                            <option key={f.id} value={f.id}>{f.name}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <>
+                          <button disabled={!pickerOn} onClick={() => void pickAttachment(a.id)}>点选下载元素</button>
+                          <div className="mono muted">{locatorSummary(a.locator)}</div>
+                        </>
+                      )}
+                    </td>
+                    <td>
+                      <select value={a.attr} onChange={(e) => updateAttachment(a.id, { attr: e.target.value as 'href' | 'src' })}>
+                        <option value="href">href</option>
+                        <option value="src">src</option>
+                      </select>
+                    </td>
+                    <td>
+                      <input
+                        style={{ width: 110 }}
+                        placeholder="pdf,docx（留空全收）"
+                        value={(a.allowedExtensions ?? []).join(',')}
+                        onChange={(e) =>
+                          updateAttachment(a.id, {
+                            allowedExtensions: e.target.value.split(',').map((s) => s.trim().replace('.', '')).filter(Boolean)
+                          })
+                        }
+                      />
+                    </td>
+                    <td>
+                      <input
+                        style={{ width: 180 }}
+                        value={a.naming}
+                        onChange={(e) => updateAttachment(a.id, { naming: e.target.value })}
+                      />
+                    </td>
+                    <td>
+                      <button className="danger" onClick={() => setAttachments((prev) => prev.filter((x) => x.id !== a.id))}>
+                        删
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
 
       <div className="card">

@@ -20,6 +20,7 @@ export interface PickerDraft {
   fields: FieldSpec[]
   detailLink?: LocatorSpec
   paginationNext?: LocatorSpec
+  attachment?: LocatorSpec
 }
 
 export class PickerSession {
@@ -134,6 +135,9 @@ export class PickerSession {
         break
       case 'pagination':
         this.draft.paginationNext = spec
+        break
+      case 'attachment':
+        this.draft.attachment = spec
         break
       default:
         break

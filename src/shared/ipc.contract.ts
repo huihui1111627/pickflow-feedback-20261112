@@ -23,6 +23,7 @@ export interface PickerDraftDto {
   fields: FieldSpec[]
   detailLink?: LocatorSpec
   paginationNext?: LocatorSpec
+  attachment?: LocatorSpec
 }
 
 export interface PreviewRow {

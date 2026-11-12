@@ -20,6 +20,7 @@
     "pack": "electron-vite build && electron-builder --dir"
   },
   "dependencies": {
+    "archiver": "^7.0.1",
     "better-sqlite3": "^11.10.0",
     "chromium-bidi": "2.1.2",
     "dayjs": "^1.11.13",
@@ -29,6 +30,7 @@
   "devDependencies": {
     "@electron/rebuild": "^3.7.1",
     "@playwright/test": "1.60.0",
+    "@types/archiver": "^6.0.4",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.18",

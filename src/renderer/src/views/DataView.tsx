@@ -9,6 +9,7 @@ export default function DataView() {
   const [page, setPage] = useState(0)
   const [data, setData] = useState<DataPage | null>(null)
   const [message, setMessage] = useState('')
+  const [withAttachments, setWithAttachments] = useState(false)
 
   useEffect(() => {
     window.api.run.listTasks().then(setTasks).catch((e) => setMessage(String(e)))
@@ -27,8 +28,12 @@ export default function DataView() {
   const doExport = async (format: 'csv' | 'json') => {
     setMessage('')
     try {
-      const result = await window.api.exporter.start(taskId, format)
-      setMessage(`已导出：${result.path}`)
+      const result = await window.api.exporter.start(taskId, format, withAttachments)
+      setMessage(
+        withAttachments
+          ? `已导出 zip（数据 + 附件 + 清单）：${result.path}`
+          : `已导出：${result.path}`
+      )
     } catch (e) {
       setMessage(`导出失败：${e instanceof Error ? e.message : String(e)}`)
     }
@@ -63,6 +68,14 @@ export default function DataView() {
           <button disabled={!taskId} onClick={() => void doExport('json')}>
             导出 JSON
           </button>
+          <label className="muted" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <input
+              type="checkbox"
+              checked={withAttachments}
+              onChange={(e) => setWithAttachments(e.target.checked)}
+            />
+            连同附件打包为 zip
+          </label>
           <span className="muted">每条数据都带来源页面地址，导出文件含 _source_url 列</span>
         </div>
 
