@@ -24,6 +24,7 @@
     "better-sqlite3": "^11.10.0",
     "chromium-bidi": "2.1.2",
     "dayjs": "^1.11.13",
+    "node-cron": "^4.6.0",
     "playwright": "1.60.0",
     "zod": "^3.24.1"
   },
@@ -33,6 +34,7 @@
     "@types/archiver": "^6.0.4",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.2",
+    "@types/node-cron": "^3.0.11",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",

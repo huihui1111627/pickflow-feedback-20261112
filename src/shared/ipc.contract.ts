@@ -132,6 +132,16 @@ export interface IpcContract {
   'run:continue-login': { args: { runId: string }; result: void }
   'run:list': { args: { taskId?: string }; result: RunSummary[] }
   'task:list': { args: void; result: TaskSummary[] }
+  'task:ensure': { args: { ruleVersionId: string }; result: { taskId: string } }
+  'task:set-schedule': {
+    args: { taskId: string; schedule: { cron: string; timezone: string; enabled: boolean } | null }
+    result: void
+  }
+  'task:get-schedule': {
+    args: { taskId: string }
+    result: { cron: string; timezone: string; enabled: boolean } | null
+  }
+  'cron:validate': { args: { expr: string }; result: boolean }
 
   'data:query': { args: DataQuery; result: DataPage }
 

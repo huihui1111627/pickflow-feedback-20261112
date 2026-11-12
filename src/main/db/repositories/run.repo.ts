@@ -14,6 +14,17 @@ interface TaskRow {
   created_at: string
 }
 
+function safeParseSchedule(raw: string | null): { cron: string; timezone: string; enabled: boolean } | null {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as { cron?: string; timezone?: string; enabled?: boolean }
+    if (!parsed.cron || typeof parsed.enabled !== 'boolean') return null
+    return { cron: parsed.cron, timezone: parsed.timezone || 'local', enabled: parsed.enabled }
+  } catch {
+    return null
+  }
+}
+
 interface RunRow {
   id: string
   task_id: string
@@ -70,6 +81,32 @@ export const runRepo = {
     const row = getDb().prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as TaskRow | undefined
     if (!row) throw new Error(`任务不存在: ${taskId}`)
     return row
+  },
+
+  // 定时配置入口用：取规则当前版本对应的任务，没有则返回 null（由上层先跑一次或自动建）
+  findTaskByRule(ruleId: string): TaskRow | null {
+    const row = getDb()
+      .prepare('SELECT * FROM tasks WHERE rule_id = ? ORDER BY created_at DESC LIMIT 1')
+      .get(ruleId) as TaskRow | undefined
+    return row ?? null
+  },
+
+  // 供调度器拿到规则当前版本号，自动建任务时使用
+  ensureTaskForRule(ruleId: string, ruleVersionId: string, profileId: string | null, settings: TaskSettings): string {
+    return this.ensureTask(ruleId, ruleVersionId, profileId, settings)
+  },
+
+  setTaskSchedule(taskId: string, schedule: { cron: string; timezone: string; enabled: boolean } | null): void {
+    getDb().prepare('UPDATE tasks SET schedule_json = ? WHERE id = ?').run(schedule ? JSON.stringify(schedule) : null, taskId)
+  },
+
+  // 调度器每次 tick 调用：只返回启用了定时且表达式存在的任务
+  listScheduledTasks(): (TaskRow & { schedule: { cron: string; timezone: string; enabled: boolean } })[] {
+    const rows = getDb().prepare('SELECT * FROM tasks WHERE schedule_json IS NOT NULL').all() as TaskRow[]
+    return rows
+      .map((row) => ({ row, schedule: safeParseSchedule(row.schedule_json) }))
+      .filter((x): x is { row: TaskRow; schedule: { cron: string; timezone: string; enabled: boolean } } => !!x.schedule && x.schedule.enabled)
+      .map(({ row, schedule }) => ({ ...row, schedule }))
   },
 
   setTaskStatus(taskId: string, status: RunStatus): void {

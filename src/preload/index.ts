@@ -44,6 +44,11 @@ const api = {
     continueLogin: (runId: string) => invoke('run:continue-login', { runId }),
     list: (taskId?: string) => invoke('run:list', taskId ? { taskId } : {}),
     listTasks: () => invoke('task:list', undefined as void),
+    ensure: (ruleVersionId: string) => invoke('task:ensure', { ruleVersionId }),
+    setSchedule: (taskId: string, schedule: IpcContract['task:set-schedule']['args']['schedule']) =>
+      invoke('task:set-schedule', { taskId, schedule }),
+    getSchedule: (taskId: string) => invoke('task:get-schedule', { taskId }),
+    validateCron: (expr: string) => invoke('cron:validate', { expr }),
     onEvent: (handler: (event: RunEvent) => void): (() => void) => {
       const listener = (_e: unknown, event: RunEvent): void => handler(event)
       ipcRenderer.on('run:event', listener)

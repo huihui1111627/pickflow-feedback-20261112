@@ -20,6 +20,9 @@ importers:
       dayjs:
         specifier: ^1.11.13
         version: 1.11.23
+      node-cron:
+        specifier: ^4.6.0
+        version: 4.6.0
       playwright:
         specifier: 1.60.0
         version: 1.60.0
@@ -42,6 +45,9 @@ importers:
       '@types/node':
         specifier: ^22.10.2
         version: 22.20.5
+      '@types/node-cron':
+        specifier: ^3.0.11
+        version: 3.0.11
       '@types/react':
         specifier: ^18.3.18
         version: 18.3.31
@@ -552,6 +558,9 @@ packages:
 
   '@types/keyv@3.1.4':
     resolution: {integrity: sha512-BQ5aZNSCpj7D6K2ksrRCTmKRLEpnPvWDiLPfoGyhZ++8YtiK9d/3DBKPJgry359X/P1PfruyYwvnvwFjuEiEIg==}
+
+  '@types/node-cron@3.0.11':
+    resolution: {integrity: sha512-0ikrnug3/IyneSHqCBeslAhlK2aBfYek1fGo4bP4QnZPmiqSGRK+Oy7ZMisLWkesffJvQ1cqAcBnJC+8+nxIAg==}
 
   '@types/node@20.19.43':
     resolution: {integrity: sha512-6oYBAi5ikg4Pl+kGsoYtawUMBT2zZMCvPNF7pVLnHZfd1zf38DRiWn/gT01RYCdUqkv7Fhr+C9ot4/tb+2sVvA==}
@@ -1350,6 +1359,10 @@ packages:
 
   node-api-version@0.2.1:
     resolution: {integrity: sha512-2xP/IGGMmmSQpI1+O/k72jF/ykvZ89JeuKX3TLJAYPDVLUalrshrLHkeVcCCZqG/eEa635cr8IBYzgnDvM2O8Q==}
+
+  node-cron@4.6.0:
+    resolution: {integrity: sha512-Si/bzYiKRHOB8/a99T2+SDGN582ONDMSTlJr5oCkT6GtnqPjZ2s10eoQRYkW9ZHwjVxONL+W8Fb+qR0AHMQsdg==}
+    engines: {node: '>=20'}
 
   node-releases@2.0.63:
     resolution: {integrity: sha512-6li2QanLsAXpIH2R6j77MzRyvOyrvdTqlKtO4CgBdHGNvN99ZZfyxszHc5o5+IZBWD5u6Hzwg83JoGXmqZNG9Q==}
@@ -2289,6 +2302,8 @@ snapshots:
     dependencies:
       '@types/node': 22.20.5
 
+  '@types/node-cron@3.0.11': {}
+
   '@types/node@20.19.43':
     dependencies:
       undici-types: 6.21.0
@@ -3145,6 +3160,8 @@ snapshots:
   node-api-version@0.2.1:
     dependencies:
       semver: 7.8.6
+
+  node-cron@4.6.0: {}
 
   node-releases@2.0.63: {}
 

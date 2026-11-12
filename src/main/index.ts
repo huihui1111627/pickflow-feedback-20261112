@@ -3,6 +3,7 @@ import { createMainWindow } from './window.js'
 import { registerIpc } from './ipc.js'
 import { closeDb, getDb } from './db/connection.js'
 import { playwrightManager } from './browser/PlaywrightManager.js'
+import { scheduler } from './services/scheduler.js'
 
 // 单实例锁，避免多个主进程同时写同一个 SQLite / Playwright profile
 const gotLock = app.requestSingleInstanceLock()
@@ -22,6 +23,7 @@ if (!gotLock) {
     getDb() // 启动即完成迁移，避免首次操作时卡顿
     registerIpc()
     ipcMain.handle('app:version', () => app.getVersion())
+    scheduler.start() // 定时任务扫描，应用重启后自动恢复
 
     const mainWindow = createMainWindow()
 
@@ -37,6 +39,7 @@ if (!gotLock) {
   })
 
   app.on('window-all-closed', () => {
+    scheduler.stop()
     void playwrightManager.stop().finally(() => {
       closeDb()
       app.quit()

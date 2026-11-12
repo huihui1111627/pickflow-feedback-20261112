@@ -16,6 +16,7 @@ import { runManager } from './services/runManager.js'
 import { previewExtract } from './services/preview.js'
 import { exportTask } from './services/export.js'
 import { getSettings, setSettings } from './services/settings.js'
+import { scheduler } from './services/scheduler.js'
 
 // 所有 IPC handler 集中注册，通道名与 shared/ipc.contract.ts 一一对应。
 
@@ -106,6 +107,28 @@ export function registerIpc(): void {
   ipcMain.handle('run:continue-login', (_e, args: { runId: string }) => runManager.continueAfterLogin(args.runId))
   ipcMain.handle('run:list', (_e, args: { taskId?: string }) => runRepo.listRuns(args.taskId))
   ipcMain.handle('task:list', () => runRepo.listTasks())
+  ipcMain.handle('task:ensure', (_e, args: { ruleVersionId: string }) => {
+    const version = ruleRepo.getVersion(args.ruleVersionId)
+    const settings = getSettings()
+    const taskId = runRepo.ensureTask(version.ruleId, args.ruleVersionId, null, {
+      minIntervalMs: settings.defaultMinIntervalMs,
+      jitterMs: settings.defaultJitterMs,
+      maxAttempts: settings.defaultMaxAttempts
+    })
+    return { taskId }
+  })
+
+  ipcMain.handle('cron:validate', (_e, args: { expr: string }) => scheduler.validateCron(args.expr))
+  ipcMain.handle('task:set-schedule', (_e, args: { taskId: string; schedule: { cron: string; timezone: string; enabled: boolean } | null }) => {
+    if (args.schedule && !scheduler.validateCron(args.schedule.cron)) {
+      throw new Error(`非法 cron 表达式: ${args.schedule.cron}`)
+    }
+    runRepo.setTaskSchedule(args.taskId, args.schedule)
+  })
+  ipcMain.handle('task:get-schedule', (_e, args: { taskId: string }) => {
+    const raw = runRepo.getTask(args.taskId).schedule_json
+    return raw ? (JSON.parse(raw) as { cron: string; timezone: string; enabled: boolean }) : null
+  })
 
   // ---- 数据与导出 ----
   ipcMain.handle('data:query', (_e, args: DataQuery) => resultRepo.query(args))

@@ -185,3 +185,26 @@ a {
 a:hover {
   text-decoration: underline;
 }
+
+/* 弹窗（定时配置等） */
+.modal-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 20, 30, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.modal {
+  background: #fff;
+  color: #1f2937;
+  border-radius: 12px;
+  padding: 20px 24px;
+  width: 620px;
+  max-width: calc(100vw - 48px);
+  max-height: 86vh;
+  overflow: auto;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+}
+.modal .muted { color: #6b7280; }
