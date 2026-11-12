@@ -430,4 +430,40 @@ describe('Runner 端到端', () => {
     // 夹具总共 12 行，全部滚出来并采集
     expect(page.total).toBe(12)
   })
+
+  it('主选择器失效时自动回退到候选选择器', async () => {
+    // 第一个候选是页面上不存在的选择器，第二个才是真实的，模拟页面改版后类名变化
+    const resilient = {
+      candidates: [
+        { engine: 'css' as const, value: '.old-class-that-no-longer-exists' },
+        { engine: 'css' as const, value: '.title' }
+      ]
+    }
+    const snapshot: RuleSnapshot = {
+      schemaVersion: 1,
+      startUrl: listUrl,
+      list: { container: css('#notice-list'), row: css('li.row') },
+      fields: [
+        { id: 'title', name: '标题', kind: 'text', locator: resilient, scope: 'list', required: true, dataType: 'string' }
+      ],
+      pagination: { mode: 'none', maxPages: 1 },
+      cleaning: [{ fieldId: 'title', ops: [{ op: 'trim' }] }],
+      attachments: [],
+      dedupeKey: ['title'],
+      retry: { maxAttempts: 2, backoffBaseMs: 50, backoffMaxMs: 200 },
+      throttle: { minIntervalMs: 0, jitterMs: 0 }
+    }
+    const { ruleId, versionId } = ruleRepo.create('候选回退规则', 'it', snapshot, 'v1')
+    const taskId = runRepo.ensureTask(ruleId, versionId, null, { minIntervalMs: 0, jitterMs: 0, maxAttempts: 2 })
+    const runId = runRepo.createRun(taskId, versionId, 'manual', null)
+    const runner = new Runner({
+      runId, taskId, ruleVersionId: versionId, snapshot, context,
+      resumeCursor: null, emit: () => undefined
+    })
+    await runner.run()
+
+    // 主选择器失效但候选命中，整行不失败，3 行正常入库
+    expect(runRepo.getRun(runId).status).toBe('done')
+    expect(resultRepo.query({ taskId, limit: 10, offset: 0 }).total).toBe(3)
+  })
 })
