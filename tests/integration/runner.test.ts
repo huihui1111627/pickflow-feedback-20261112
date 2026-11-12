@@ -318,4 +318,116 @@ describe('Runner 端到端', () => {
     expect(attachments.every((a) => a.status === 'done' && a.field_id === 'fromField')).toBe(true)
     expect(attachments.every((a) => a.url.endsWith('/files/spec.pdf'))).toBe(true)
   })
+
+  it('登录 cookie 缺失时暂停，重新确认后续跑完成', async () => {
+    const snapshot = buildSnapshot()
+    snapshot.attachments = []
+    // 要求一个不存在的 cookie，必然判定登录过期
+    snapshot.login = { cookieName: 'session_must_exist' }
+    const { ruleId, versionId } = ruleRepo.create('登录暂停规则', 'it', snapshot, 'v1')
+    const taskId = runRepo.ensureTask(ruleId, versionId, null, { minIntervalMs: 0, jitterMs: 0, maxAttempts: 2 })
+    const runId = runRepo.createRun(taskId, versionId, 'manual', null)
+
+    const statuses: string[] = []
+    const runner = new Runner({
+      runId, taskId, ruleVersionId: versionId, snapshot, context,
+      resumeCursor: null,
+      emit: (e) => {
+        if (e.type === 'status') statuses.push(e.status)
+      }
+    })
+
+    // 跑到登录检测会挂起，给它一点时间进入暂停态
+    const runPromise = runner.run()
+    await new Promise((r) => setTimeout(r, 1500))
+    expect(runRepo.getRun(runId).status).toBe('paused_login')
+    expect(statuses).toContain('paused_login')
+    // 暂停期间没有数据入库
+    expect(resultRepo.query({ taskId, limit: 10, offset: 0 }).total).toBe(0)
+
+    // 模拟用户补好登录态（写入要求的 cookie）后点继续
+    await context.addCookies([
+      { name: 'session_must_exist', value: 'restored', domain: '127.0.0.1', path: '/' }
+    ])
+    runner.notifyLoginResolved()
+    await runPromise
+
+    expect(runRepo.getRun(runId).status).toBe('done')
+    expect(resultRepo.query({ taskId, limit: 10, offset: 0 }).total).toBe(3)
+  })
+
+  it('能采集 iframe 内的列表（framePath 定位）', async () => {
+    const framePath = [
+      { iframeLocator: css('#content-frame'), name: 'dataframe', urlPattern: 'frame-inner.html' }
+    ]
+    const snapshot: RuleSnapshot = {
+      schemaVersion: 1,
+      startUrl: `${listUrl}frame-outer.html`,
+      list: {
+        container: { ...css('#frame-list'), framePath },
+        row: { ...css('.frame-row'), framePath }
+      },
+      fields: [
+        { id: 'title', name: '标题', kind: 'text', locator: { ...css('.f-title'), framePath }, scope: 'list', required: true, dataType: 'string' },
+        { id: 'code', name: '编号', kind: 'text', locator: { ...css('.f-code'), framePath }, scope: 'list', dataType: 'string' }
+      ],
+      pagination: { mode: 'none', maxPages: 1 },
+      cleaning: [],
+      attachments: [],
+      dedupeKey: ['code'],
+      retry: { maxAttempts: 2, backoffBaseMs: 50, backoffMaxMs: 200 },
+      throttle: { minIntervalMs: 0, jitterMs: 0 }
+    }
+    const { ruleId, versionId } = ruleRepo.create('iframe 规则', 'it', snapshot, 'v1')
+    const taskId = runRepo.ensureTask(ruleId, versionId, null, { minIntervalMs: 0, jitterMs: 0, maxAttempts: 2 })
+    const runId = runRepo.createRun(taskId, versionId, 'manual', null)
+    const runner = new Runner({
+      runId, taskId, ruleVersionId: versionId, snapshot, context,
+      resumeCursor: null, emit: () => undefined
+    })
+    await runner.run()
+
+    expect(runRepo.getRun(runId).status).toBe('done')
+    const page = resultRepo.query({ taskId, limit: 10, offset: 0 })
+    expect(page.total).toBe(2)
+    const codes = page.rows.map((r) => r.data.code).sort()
+    expect(codes).toEqual(['FR-001', 'FR-002'])
+    expect(page.rows.map((r) => r.data.title)).toEqual(
+      expect.arrayContaining(['框架内项目一', '框架内项目二'])
+    )
+  })
+
+  it('滚动加载：滚到底持续追加行直到收敛', async () => {
+    const snapshot: RuleSnapshot = {
+      schemaVersion: 1,
+      startUrl: `${listUrl}scroll.html`,
+      list: { container: css('#scroll-list'), row: css('.scroll-row') },
+      fields: [
+        { id: 'title', name: '标题', kind: 'text', locator: css('.s-title'), scope: 'list', required: true, dataType: 'string' }
+      ],
+      pagination: {
+        mode: 'scroll',
+        maxPages: 20,
+        scroll: { container: css('#scroll-list'), maxScrolls: 20, settleMs: 150, noNewRowsRounds: 2 }
+      },
+      cleaning: [],
+      attachments: [],
+      dedupeKey: ['title'],
+      retry: { maxAttempts: 2, backoffBaseMs: 50, backoffMaxMs: 200 },
+      throttle: { minIntervalMs: 0, jitterMs: 0 }
+    }
+    const { ruleId, versionId } = ruleRepo.create('滚动规则', 'it', snapshot, 'v1')
+    const taskId = runRepo.ensureTask(ruleId, versionId, null, { minIntervalMs: 0, jitterMs: 0, maxAttempts: 2 })
+    const runId = runRepo.createRun(taskId, versionId, 'manual', null)
+    const runner = new Runner({
+      runId, taskId, ruleVersionId: versionId, snapshot, context,
+      resumeCursor: null, emit: () => undefined
+    })
+    await runner.run()
+
+    expect(runRepo.getRun(runId).status).toBe('done')
+    const page = resultRepo.query({ taskId, limit: 50, offset: 0 })
+    // 夹具总共 12 行，全部滚出来并采集
+    expect(page.total).toBe(12)
+  })
 })

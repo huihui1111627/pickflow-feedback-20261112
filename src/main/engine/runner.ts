@@ -365,9 +365,18 @@ export class Runner {
     let noNewRounds = 0
     let lastCount = await rowLocator.count().catch(() => 0)
 
+    // 配了滚动容器就滚容器（常见于内部 overflow 列表），否则滚整窗
+    const scrollContainerLocator = scrollSpec.container ? resolveOnPage(page, scrollSpec.container) : null
+
     for (let i = 0; i < maxScrolls; i++) {
       if (this.stopFlag) return
-      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+      if (scrollContainerLocator) {
+        await scrollContainerLocator.first().evaluate((el) => {
+          el.scrollTop = el.scrollHeight
+        })
+      } else {
+        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+      }
       await this.sleep(scrollSpec.settleMs)
 
       const count = await rowLocator.count().catch(() => 0)

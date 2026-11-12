@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh">
+<head><meta charset="utf-8"><title>滚动加载列表</title>
+<style>
+  /* 限定高度制造可滚动容器 */
+  #scroll-list { max-height: 160px; overflow-y: auto; padding: 0; margin: 0; list-style: none; }
+  .scroll-row { height: 60px; border: 1px solid #ccc; }
+</style>
+</head>
+<body>
+  <ul id="scroll-list"></ul>
+  <script>
+    // 初始 3 行，每次滚到底追加 3 行，最多 12 行，模拟无限滚动
+    const list = document.getElementById('scroll-list')
+    let count = 0
+    const TOTAL = 12
+    function addBatch() {
+      for (let i = 0; i < 3 && count < TOTAL; i++) {
+        count++
+        const li = document.createElement('li')
+        li.className = 'scroll-row'
+        li.innerHTML = '<span class="s-title">滚动项目 ' + count + '</span>'
+        list.appendChild(li)
+      }
+    }
+    addBatch()
+    list.addEventListener('scroll', () => {
+      if (list.scrollTop + list.clientHeight >= list.scrollHeight - 2) addBatch()
+    })
+  </script>
+</body>
+</html>

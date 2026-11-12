@@ -494,6 +494,24 @@ export default function RuleEditorView({ ruleId, onSaved }: Props) {
           )}
           {pagination.mode === 'scroll' && (
             <>
+              <input
+                style={{ flex: 1, minWidth: 240 }}
+                placeholder="滚动容器 CSS 选择器（内部 overflow 列表才填，留空滚整窗），如 #scroll-list"
+                value={pagination.scroll?.container?.candidates[0]?.value ?? ''}
+                onChange={(e) =>
+                  setPagination({
+                    ...pagination,
+                    scroll: {
+                      container: e.target.value.trim()
+                        ? { candidates: [{ engine: 'css', value: e.target.value.trim() }] }
+                        : undefined,
+                      maxScrolls: pagination.scroll?.maxScrolls ?? 50,
+                      settleMs: pagination.scroll?.settleMs ?? 1200,
+                      noNewRowsRounds: pagination.scroll?.noNewRowsRounds ?? 3
+                    }
+                  })
+                }
+              />
               <label>
                 最多滚动
                 <input
@@ -504,6 +522,7 @@ export default function RuleEditorView({ ruleId, onSaved }: Props) {
                     setPagination({
                       ...pagination,
                       scroll: {
+                        container: pagination.scroll?.container,
                         maxScrolls: Number(e.target.value) || 50,
                         settleMs: pagination.scroll?.settleMs ?? 1200,
                         noNewRowsRounds: pagination.scroll?.noNewRowsRounds ?? 3
@@ -523,6 +542,7 @@ export default function RuleEditorView({ ruleId, onSaved }: Props) {
                     setPagination({
                       ...pagination,
                       scroll: {
+                        container: pagination.scroll?.container,
                         maxScrolls: pagination.scroll?.maxScrolls ?? 50,
                         settleMs: Number(e.target.value) || 1200,
                         noNewRowsRounds: pagination.scroll?.noNewRowsRounds ?? 3
