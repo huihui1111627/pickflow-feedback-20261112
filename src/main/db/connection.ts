@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3'
-import { readFileSync, readdirSync } from 'node:fs'
+import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { dbPath } from '../services/paths.js'
@@ -25,6 +25,9 @@ export function getDb(): Database.Database {
 
 export function migrate(db: Database.Database): void {
   const current = db.pragma('user_version', { simple: true }) as number
+  if (!existsSync(migrationsDir)) {
+    throw new Error(`迁移目录不存在: ${migrationsDir}，检查构建是否拷贝了 migrations/*.sql`)
+  }
   const files = readdirSync(migrationsDir)
     .filter((f) => f.endsWith('.sql'))
     .sort()
