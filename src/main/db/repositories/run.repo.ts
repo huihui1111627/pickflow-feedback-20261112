@@ -54,7 +54,7 @@ export const runRepo = {
   ensureTask(ruleId: string, ruleVersionId: string, profileId: string | null, settings: TaskSettings): string {
     const db = getDb()
     const existing = db
-      .prepare('SELECT id FROM tasks WHERE rule_id = ? AND rule_version_id = ? AND archived IS NOT 1 LIMIT 1')
+      .prepare('SELECT id FROM tasks WHERE rule_id = ? AND rule_version_id = ? LIMIT 1')
       .get(ruleId, ruleVersionId) as { id: string } | undefined
     if (existing) return existing.id
 

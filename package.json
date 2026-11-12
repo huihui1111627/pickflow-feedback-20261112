@@ -16,6 +16,7 @@
     "test:watch": "vitest",
     "e2e": "playwright test",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
+    "rebuild:node": "pnpm rebuild better-sqlite3",
     "pack": "electron-vite build && electron-builder --dir"
   },
   "dependencies": {
